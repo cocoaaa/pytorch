@@ -151,5 +151,36 @@ variable_list grad(
     outputs, gradients, retain_graph.value(), create_graph, inputs, allow_unused);
 }
 
+
+namespace forward_ad {
+
+uint64_t enter_dual_level() {
+  return ForwardADLevel::get_next_idx();
+}
+
+void exit_dual_level(int64_t level) {
+  ForwardADLevel::release_idx(level);
+}
+
+at::Tensor make_dual(const at::Tensor& primal, at::Tensor tangent, int64_t level) {
+  TORCH_CHECK(!primal.fw_grad(level).defined(), "Making a dual Tensor based on a Tensor that "
+              "already has a forward gradient at the same level ", level, " is not supported.");
+
+  TORCH_CHECK(!primal.is_view(), "Creating a dual Tensor where the primal is a differentiable "
+              "view is not allowed.")
+
+  auto dual_tensor = primal.view(primal.sizes());
+  // This is similar to dual_tensor.set_fw_grad(tangent, level); but does not update primal's forward grad
+  auto meta = torch::autograd::impl::materialize_autograd_meta(dual_tensor);
+  meta->_set_fw_grad(tangent, dual_tensor, level, /* handle_view */ false);
+  return dual_tensor;
+}
+
+std::pair<at::Tensor, at::Tensor> unpack_dual(at::Tensor tensor, int64_t level) {
+  return {tensor.fw_primal(level), tensor.fw_grad(level)};
+}
+
+} // namespace forward_ad
+
 } // namespace autograd
 } // namespace torch
