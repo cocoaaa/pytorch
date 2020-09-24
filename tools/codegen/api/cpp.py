@@ -155,6 +155,7 @@ JIT_TO_CPP_DEFAULT = {
     '[]': '{}',
     '[0,1]': '{0,1}',  # TODO: stop special casing
     'contiguous_format': 'MemoryFormat::Contiguous',
+    'long': 'at::kLong',
 }
 
 # Convert a JIT default into C++ expression representing the default
@@ -194,8 +195,8 @@ def argument(a: Union[Argument, TensorOptionsArguments, ThisArgument]) -> CppArg
     else:
         assert_never(a)
 
-def group_arguments(
-    func: FunctionSchema, *, method: bool = False
+def arguments(
+    func: FunctionSchema, *, method: bool = False, gathered: bool = False,
 ) -> Sequence[Union[Argument, TensorOptionsArguments, ThisArgument]]:
     args: List[Union[Argument, ThisArgument, TensorOptionsArguments]] = []
     args.extend(func.out_arguments)
@@ -205,37 +206,40 @@ def group_arguments(
     else:
         args.extend(func.arguments)
 
-    # group up arguments for tensor options
+    if gathered:
+        # group up arguments for tensor options
 
-    def pred(name: str, ty: Type) -> Callable[[Argument], bool]:
-        return lambda a: a.name == name and a.type in [ty, OptionalType(ty)]
-    predicates = [  # order matters
-        pred('dtype', Type.parse('ScalarType')),
-        pred('layout', Type.parse('Layout')),
-        pred('device', Type.parse('Device')),
-        pred('pin_memory', Type.parse('bool')),
-    ]
+        def pred(name: str, ty: Type) -> Callable[[Argument], bool]:
+            return lambda a: a.name == name and a.type in [ty, OptionalType(ty)]
+        predicates = [  # order matters
+            pred('dtype', Type.parse('ScalarType')),
+            pred('layout', Type.parse('Layout')),
+            pred('device', Type.parse('Device')),
+            pred('pin_memory', Type.parse('bool')),
+        ]
 
-    i = 0
-    while i < len(func.kwarg_only_arguments):
-        # If there is enough space...
-        if i <= len(func.kwarg_only_arguments) - len(predicates):
-            # And the next len(predicates) arguments look like TensorOptions arguments
-            if all(p(a) for p, a in zip(predicates, func.kwarg_only_arguments[i : i + len(predicates)])):
-                # Group them together as one argument
-                args.append(TensorOptionsArguments(
-                    dtype=func.kwarg_only_arguments[i],
-                    layout=func.kwarg_only_arguments[i + 1],
-                    device=func.kwarg_only_arguments[i + 2],
-                    pin_memory=func.kwarg_only_arguments[i + 3],
-                ))
-                i += len(predicates)
-                continue
-        args.append(func.kwarg_only_arguments[i])
-        i += 1
+        i = 0
+        while i < len(func.kwarg_only_arguments):
+            # If there is enough space...
+            if i <= len(func.kwarg_only_arguments) - len(predicates):
+                # And the next len(predicates) arguments look like TensorOptions arguments
+                if all(p(a) for p, a in zip(predicates, func.kwarg_only_arguments[i : i + len(predicates)])):
+                    # Group them together as one argument
+                    args.append(TensorOptionsArguments(
+                        dtype=func.kwarg_only_arguments[i],
+                        layout=func.kwarg_only_arguments[i + 1],
+                        device=func.kwarg_only_arguments[i + 2],
+                        pin_memory=func.kwarg_only_arguments[i + 3],
+                    ))
+                    i += len(predicates)
+                    continue
+            args.append(func.kwarg_only_arguments[i])
+            i += 1
+    else:
+        args.extend(func.kwarg_only_arguments)
 
     return args
 
 # Convert arguments to C++ API form
-def arguments(func: FunctionSchema, *, method: bool = False) -> Sequence[CppArgument]:
-    return list(map(argument, group_arguments(func, method=method)))
+def cpp_arguments(func: FunctionSchema, *, method: bool = False, gathered: bool = False) -> Sequence[CppArgument]:
+    return list(map(argument, arguments(func, method=method, gathered=gathered)))
