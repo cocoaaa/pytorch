@@ -252,6 +252,41 @@ class ChainDataset(IterableDataset):
             total += len(d)  # type: ignore
         return total
 
+class ShuffleDataset(IterableDataset[T_co]):
+    r"""Dataset shuffled from the original dataset.
+
+    This class is useful to shuffle the existing dataset. The buffer with buffer_size 
+    is filled with the Dataset first, and then pops out a piece of data randomly for
+    each iteration.
+    For the buffer size smaller than 1, the buffer size is set to 1 representing 
+    non-shuffled dataset. For perfect shuffling, the buffer size is required to be 
+    greater or equal to the size of dataset.
+
+    Arguments:
+        dataset (Dataset): The original Dataset.
+        buffer_size (buffer size): The buffer size for shuffling. 
+    """
+    dataset: IterableDataset[T_co]
+    buf: List[T_co]
+
+    def __init__(self, dataset: IterableDataset[T_co], buffer_size: int) -> None:
+        super(ShuffleDataset, self).__init__()
+        self.dataset = dataset
+        self.buffer_size = buffer_size if buffer_size > 1 else 1
+
+    def __iter__(self) -> Iterator[T_co]:
+        from random import randint 
+        idx = 0
+        self.buf = []
+        for x in self.dataset:
+            if (idx == self.buffer_size):
+                yield self.buf.pop(randint(0, self.buffer_size - 1))
+            else:
+                idx += 1
+            self.buf.append(x)
+        while (idx > 0):
+            idx -= 1
+            yield self.buf.pop(randint(0, idx))
 
 class Subset(Dataset[T_co]):
     r"""
