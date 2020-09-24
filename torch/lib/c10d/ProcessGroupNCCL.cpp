@@ -166,6 +166,7 @@ ncclResult_t ncclAlltoall(
     ncclDataType_t type,
     ncclComm_t comm,
     cudaStream_t stream) {
+  std::cout << "ncclAlltoall?" << std::endl;
   int numranks;
   size_t rankdiff = count * size;
   C10D_NCCL_CHECK(ncclCommCount(comm, &numranks));
